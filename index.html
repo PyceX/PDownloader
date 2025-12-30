@@ -137,18 +137,20 @@
 
             <!-- Download Buttons -->
             <div class="space-y-3 w-full">
-                <!-- Прямое скачивание без JS манипуляций -->
-                <a id="mainDownloadBtn" href="#" target="_blank"
+                <!-- Кнопки используют onclick для запуска JS функции forceDownload -->
+                <button id="mainDownloadBtn" onclick="forceDownload(this.dataset.url, this.dataset.title, 'video')"
                    class="w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-3 transition-transform active:scale-95">
                     <i class="fas fa-video"></i>
                     <span class="btn-text">Скачать Видео</span>
-                </a>
+                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
+                </button>
 
-                <a id="audioDownloadBtn" href="#" target="_blank"
+                <button id="audioDownloadBtn" onclick="forceDownload(this.dataset.url, this.dataset.title, 'audio')"
                    class="hidden w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-xl flex items-center justify-center gap-3 transition-colors active:scale-95">
                     <i class="fas fa-music text-slate-400"></i>
                     <span class="btn-text">Скачать Аудио</span>
-                </a>
+                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
+                </button>
             </div>
         </div>
 
@@ -169,8 +171,17 @@
         // --- CONFIG ---
         const TOKENS = ['sX2ZsiuwR3igQb2OKJwMqWxT', 'vsXKbUDZ4BlGr5FC2GXnKCze'];
         const API_ENDPOINT = 'https://fastsaverapi.com/get-info';
-        // Прокси ТОЛЬКО для получения JSON информации, НЕ для скачивания файла
-        const PROXY = 'https://corsproxy.io/?';
+        
+        // Два разных прокси для надежности:
+        // corsproxy.io - обычно быстрый
+        // api.codetabs.com - хорошо работает с бинарными данными
+        const PROXIES_FOR_DOWNLOAD = [
+            'https://corsproxy.io/?',
+            'https://api.codetabs.com/v1/proxy?quest='
+        ];
+
+        // State
+        let currentFileTitle = "PDownloader_File";
 
         // Elements
         const el = {
@@ -244,8 +255,14 @@
             setLoading(true);
 
             try {
+                // Используем ротацию токенов для получения JSON
                 const data = await fetchWithRotation(url);
                 el.status.classList.remove('error');
+                
+                // Очистка имени файла
+                currentFileTitle = (data.title || data.desc || "video")
+                    .replace(/[^a-z0-9а-яё \-_]/gi, '')
+                    .substring(0, 50).trim() || "PDownloader_file";
                 
                 renderResult(data);
 
@@ -259,11 +276,13 @@
         }
 
         async function fetchWithRotation(url) {
+            // Для получения JSON данных используем простой прокси
+            const metaProxy = 'https://corsproxy.io/?'; 
+            
             for (const token of TOKENS) {
                 try {
                     const target = `${API_ENDPOINT}?token=${token}&url=${encodeURIComponent(url)}`;
-                    // Используем прокси ТОЛЬКО для получения метаданных (JSON)
-                    const res = await fetch(PROXY + encodeURIComponent(target));
+                    const res = await fetch(metaProxy + encodeURIComponent(target));
                     if (!res.ok) throw new Error("Network error");
                     const data = await res.json();
                     if (data.error) throw new Error(data.message);
@@ -295,18 +314,13 @@
                 video.onerror = () => { el.player.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`; };
                 el.player.appendChild(video);
 
-                // ПРЯМОЕ СКАЧИВАНИЕ: Ставим прямую ссылку в href
-                // Это решает проблему "provide proxy" и не требует JS манипуляций
-                el.dlMain.href = videoUrl;
-                el.dlMain.dataset.download = "video.mp4"; // Подсказка браузеру
-                el.dlMain.querySelector('.btn-text').innerText = 'Скачать Видео';
+                setupBtn(el.dlMain, videoUrl, 'video', 'Скачать Видео', 'fa-video');
             } else {
                 const imgUrl = findMediaUrl(data, 'image') || thumb;
                 el.player.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover">`;
                 
                 if (imgUrl && !imgUrl.endsWith('.mp3')) {
-                    el.dlMain.href = imgUrl;
-                    el.dlMain.querySelector('.btn-text').innerText = 'Скачать Фото';
+                    setupBtn(el.dlMain, imgUrl, 'image', 'Скачать Фото', 'fa-image');
                 } else {
                     el.dlMain.classList.add('hidden');
                 }
@@ -315,14 +329,17 @@
             if (audioUrl) {
                 el.dlAudio.classList.remove('hidden');
                 el.dlAudio.classList.add('flex');
-                el.dlAudio.href = audioUrl;
-                el.dlAudio.dataset.download = "audio.mp3";
-            } else {
-                el.dlAudio.classList.add('hidden');
-                el.dlAudio.classList.remove('flex');
+                setupBtn(el.dlAudio, audioUrl, 'audio', 'Скачать Аудио', 'fa-music');
             }
 
             el.result.classList.remove('hidden');
+        }
+
+        function setupBtn(btn, url, type, label, iconClass) {
+            btn.dataset.url = url;
+            btn.dataset.title = currentFileTitle;
+            btn.querySelector('.btn-text').innerText = label;
+            btn.querySelector('i:not(.btn-loader)').className = `fas ${iconClass}`;
         }
 
         function findMediaUrl(data, type) {
@@ -346,8 +363,95 @@
             for (const key in map) if (url.includes(key)) iconClass = map[key];
             el.icon.className = `${iconClass} text-white text-lg`;
         }
+
+        // --- УЛУЧШЕННАЯ ФУНКЦИЯ СКАЧИВАНИЯ (BLOB + PROXY ROTATION) ---
+        async function forceDownload(url, title, type) {
+            if (!url) return;
+            const btn = type === 'audio' ? el.dlAudio : el.dlMain;
+            const ui = {
+                text: btn.querySelector('.btn-text'),
+                loader: btn.querySelector('.btn-loader'),
+                icon: btn.querySelector('i:not(.btn-loader)')
+            };
+            const originalText = ui.text.innerText;
+
+            btn.disabled = true;
+            btn.classList.add('opacity-80');
+            ui.icon.classList.add('hidden');
+            ui.loader.classList.remove('hidden');
+            ui.text.innerText = "Сохранение...";
+
+            let blob = null;
+            let success = false;
+
+            // Попытка скачать через разные прокси (чтобы избежать блокировки "provide proxy")
+            for (const proxyBase of PROXIES_FOR_DOWNLOAD) {
+                try {
+                    console.log(`Trying proxy: ${proxyBase}`);
+                    const response = await fetch(proxyBase + encodeURIComponent(url));
+                    
+                    // Проверка на ошибки прокси (некоторые возвращают HTML 200 OK при ошибке)
+                    const contentType = response.headers.get("content-type");
+                    if (!response.ok || (contentType && contentType.includes('text/html'))) {
+                        throw new Error("Proxy returned text instead of binary");
+                    }
+
+                    blob = await response.blob();
+                    
+                    if (blob.size < 500) throw new Error("File too small (likely error msg)");
+                    
+                    success = true;
+                    break; // Успех, выходим из цикла
+                } catch (e) {
+                    console.warn("Proxy failed:", e);
+                    continue; // Пробуем следующий
+                }
+            }
+
+            if (success && blob) {
+                try {
+                    const ext = getExtension(blob.type, url, type);
+                    const randomSuffix = Math.random().toString(36).substring(2, 7);
+                    const fileName = `${title}_${randomSuffix}${ext}`;
+
+                    const blobUrl = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.style.display = 'none';
+                    a.href = blobUrl;
+                    a.download = fileName;
+                    document.body.appendChild(a);
+                    a.click();
+                    
+                    setTimeout(() => {
+                        document.body.removeChild(a);
+                        window.URL.revokeObjectURL(blobUrl);
+                    }, 100);
+                } catch (e) {
+                    console.error("Save error:", e);
+                    // Fallback to direct open if saving fails
+                    window.open(url, '_blank');
+                }
+            } else {
+                // Если все прокси не сработали, открываем прямую ссылку
+                // Это единственный способ обойти жесткую защиту, если Blob не проходит
+                window.open(url, '_blank');
+            }
+
+            // Restore UI
+            btn.disabled = false;
+            btn.classList.remove('opacity-80');
+            ui.icon.classList.remove('hidden');
+            ui.loader.classList.add('hidden');
+            ui.text.innerText = originalText;
+        }
+
+        function getExtension(mime, url, type) {
+            if (type === 'audio' || (mime && mime.includes('audio'))) return '.mp3';
+            if (type === 'video') return '.mp4'; // Принудительно mp4 для видео
+            if (mime && mime.includes('image')) return '.jpg';
+            if (url.includes('.webm')) return '.webm';
+            return '.mp4';
+        }
     </script>
 </body>
 </html>
-
-
