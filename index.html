@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FastSaver Pro - Full API Client</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Space Grotesk', sans-serif; background-color: #050505; color: #ffffff; }
+        
+        /* Фон */
+        .grid-bg {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background-image: 
+                linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+            background-size: 30px 30px;
+            z-index: -1;
+            pointer-events: none;
+        }
+        .glow-spot {
+            position: fixed;
+            width: 600px; height: 600px;
+            background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+            top: 50%; left: 50%; transform: translate(-50%, -50%);
+            z-index: -1;
+            pointer-events: none;
+        }
+
+        /* Glass Cards */
+        .glass {
+            background: rgba(20, 20, 20, 0.6);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        /* Анимация музыки (Shazam эффект) */
+        .equalizer {
+            display: flex;
+            align-items: flex-end;
+            height: 20px;
+            gap: 2px;
+        }
+        .bar {
+            width: 3px;
+            background: #10b981;
+            animation: bounce 0.5s infinite ease-in-out alternate;
+        }
+        .bar:nth-child(2) { animation-delay: 0.1s; }
+        .bar:nth-child(3) { animation-delay: 0.2s; }
+        .bar:nth-child(4) { animation-delay: 0.3s; }
+        
+        @keyframes bounce {
+            0% { height: 5px; opacity: 0.5; }
+            100% { height: 20px; opacity: 1; }
+        }
+
+        /* Скроллбар */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: #000; }
+        ::-webkit-scrollbar-thumb { background: #333; border-radius: 2px; }
+    </style>
+</head>
+<body class="flex flex-col min-h-screen">
+
+    <div class="grid-bg"></div>
+    <div class="glow-spot"></div>
+
+    <!-- Header -->
+    <header class="w-full py-6 px-6 z-50 border-b border-white/5 bg-black/50 backdrop-blur-md">
+        <div class="max-w-6xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="w-8 h-8 bg-indigo-600 rounded flex items-center justify-center font-bold text-lg">
+                    FS
+                </div>
+                <span class="font-bold text-xl tracking-tight">FastSaver<span class="text-indigo-500">API</span></span>
+            </div>
+            <div class="text-[10px] font-mono text-slate-500 border border-white/10 px-2 py-1 rounded bg-black">
+                MODE: STRICT API
+            </div>
+        </div>
+    </header>
+
+    <!-- Main -->
+    <main class="flex-grow flex flex-col items-center justify-center px-4 py-12 w-full max-w-5xl mx-auto">
+        
+        <div class="text-center mb-10 w-full">
+            <h1 class="text-4xl md:text-6xl font-bold mb-4">
+                Медиа Анализ <span class="text-indigo-500">&</span> Загрузка
+            </h1>
+            <p class="text-slate-400 max-w-xl mx-auto">
+                Полная интеграция FastSaver. Поддержка видео, фото и <span class="text-emerald-400">Shazam</span> (аудио-распознавания).
+            </p>
+        </div>
+
+        <!-- Input -->
+        <div class="w-full max-w-3xl relative group z-20 mb-12">
+            <div class="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-emerald-500 rounded-xl opacity-30 blur group-hover:opacity-60 transition duration-500"></div>
+            <div class="relative flex bg-black rounded-xl p-2 border border-white/10">
+                <input type="text" id="urlInput" 
+                    class="flex-grow bg-transparent text-white placeholder-slate-600 px-6 py-4 outline-none font-mono text-sm"
+                    placeholder="Вставьте ссылку (TikTok, Instagram, YouTube)..."
+                    onkeydown="if(event.key === 'Enter') fetchApi()">
+                
+                <button onclick="fetchApi()" id="submitBtn"
+                    class="bg-white text-black hover:bg-slate-200 font-bold px-8 rounded-lg transition flex items-center gap-2">
+                    <span>RUN</span>
+                    <i class="fas fa-terminal text-xs"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- Loader -->
+        <div id="loader" class="hidden flex-col items-center justify-center gap-4">
+            <div class="w-12 h-12 border-4 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="font-mono text-xs text-indigo-400 animate-pulse">CONNECTING TO API...</div>
+        </div>
+
+        <!-- Results Grid -->
+        <div id="resultContainer" class="hidden w-full grid grid-cols-1 lg:grid-cols-12 gap-6 animate-[fadeIn_0.5s_ease-out]">
+            
+            <!-- Column 1: Media Preview & Main Info (5 cols) -->
+            <div class="lg:col-span-5 space-y-6">
+                <!-- Preview Card -->
+                <div class="glass rounded-2xl overflow-hidden p-2">
+                    <div class="aspect-[9/16] lg:aspect-square bg-black rounded-xl overflow-hidden relative group">
+                        <div id="mediaPreview" class="w-full h-full flex items-center justify-center"></div>
+                        <!-- Platform Badge -->
+                        <div class="absolute top-3 left-3 bg-black/80 backdrop-blur border border-white/10 px-3 py-1 rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-2">
+                            <span id="platformName">SOURCE</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Main Info Card -->
+                <div class="glass rounded-2xl p-6">
+                    <h2 class="text-lg font-bold leading-tight mb-2" id="videoTitle">Title</h2>
+                    <div class="flex items-center gap-4 text-xs text-slate-400 font-mono mt-4 pt-4 border-t border-white/10">
+                        <span id="videoAuthor"><i class="fas fa-user mr-1"></i> @User</span>
+                        <span id="videoStats"><i class="fas fa-eye mr-1"></i> 0 views</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Column 2: Downloads & Shazam (7 cols) -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- Shazam / Audio Card -->
+                <div id="musicCard" class="hidden glass rounded-2xl p-6 border-l-4 border-l-emerald-500 relative overflow-hidden">
+                    <div class="absolute top-0 right-0 p-4 opacity-10 text-emerald-500">
+                        <i class="fas fa-music text-9xl"></i>
+                    </div>
+                    
+                    <div class="flex items-center gap-2 mb-4">
+                        <div class="equalizer">
+                            <div class="bar"></div><div class="bar"></div><div class="bar"></div><div class="bar"></div>
+                        </div>
+                        <span class="text-xs font-bold text-emerald-400 uppercase tracking-widest">Audio Intelligence</span>
+                    </div>
+
+                    <div class="flex items-center gap-4 relative z-10">
+                        <img id="musicCover" src="" class="w-16 h-16 rounded-lg bg-slate-800 object-cover border border-white/10">
+                        <div class="flex-grow">
+                            <div class="text-lg font-bold text-white truncate" id="musicTitle">Track Name</div>
+                            <div class="text-sm text-slate-400" id="musicAuthor">Artist Name</div>
+                        </div>
+                        <a id="musicDownload" href="#" target="_blank" class="w-10 h-10 bg-emerald-500 hover:bg-emerald-400 rounded-full flex items-center justify-center text-black transition shadow-lg shadow-emerald-900/50">
+                            <i class="fas fa-download"></i>
+                        </a>
+                    </div>
+                </div>
+
+                <!-- Download Options -->
+                <div class="glass rounded-2xl p-6">
+                    <h3 class="text-sm font-bold text-slate-500 uppercase tracking-widest mb-4">Download Formats</h3>
+                    <div id="downloadList" class="space-y-3 max-h-[400px] overflow-y-auto pr-2">
+                        <!-- Buttons will be injected here -->
+                    </div>
+                </div>
+
+                <!-- JSON Debug Toggle (Optional for "Full API" proof) -->
+                <div class="text-center">
+                    <button onclick="toggleDebug()" class="text-[10px] text-slate-600 font-mono hover:text-white transition">
+                        [ VIEW RAW API RESPONSE ]
+                    </button>
+                    <pre id="debugData" class="hidden mt-4 text-left text-[10px] font-mono text-green-500 bg-black p-4 rounded border border-white/10 overflow-x-auto"></pre>
+                </div>
+            </div>
+        </div>
+
+        <!-- Error -->
+        <div id="errorBox" class="hidden mt-8 w-full max-w-md bg-red-900/20 border border-red-500/20 p-6 rounded-xl text-center">
+            <i class="fas fa-circle-exclamation text-red-500 text-2xl mb-2"></i>
+            <p id="errorMsg" class="text-red-200 text-sm">Error</p>
+        </div>
+
+    </main>
+
+    <script>
+        // --- CONFIGURATION ---
+        const API_KEY = 'sX2ZsiuwR3igQb2OKJwMqWxT';
+        // Исправленный базовый URL
+        const API_BASE = 'https://fastsaverapi.com/get-info';
+        // CORS Proxy обязателен для работы из браузера без бэкенда
+        const PROXY = 'https://corsproxy.io/?';
+
+        // DOM
+        const urlInput = document.getElementById('urlInput');
+        const submitBtn = document.getElementById('submitBtn');
+        const loader = document.getElementById('loader');
+        const resultContainer = document.getElementById('resultContainer');
+        const errorBox = document.getElementById('errorBox');
+        
+        // Output Elements
+        const mediaPreview = document.getElementById('mediaPreview');
+        const videoTitle = document.getElementById('videoTitle');
+        const videoAuthor = document.getElementById('videoAuthor');
+        const platformName = document.getElementById('platformName');
+        const downloadList = document.getElementById('downloadList');
+        const debugData = document.getElementById('debugData');
+
+        // Music/Shazam Elements
+        const musicCard = document.getElementById('musicCard');
+        const musicCover = document.getElementById('musicCover');
+        const musicTitle = document.getElementById('musicTitle');
+        const musicAuthor = document.getElementById('musicAuthor');
+        const musicDownload = document.getElementById('musicDownload');
+
+        async function fetchApi() {
+            const url = urlInput.value.trim();
+            if(!url) return;
+
+            // Reset UI
+            resetUI();
+            setLoading(true);
+
+            try {
+                // Строим запрос
+                const targetUrl = `${API_BASE}?url=${encodeURIComponent(url)}&token=${API_KEY}`;
+                const proxyRequest = PROXY + encodeURIComponent(targetUrl);
+
+                console.log('Fetching:', targetUrl);
+
+                const response = await fetch(proxyRequest);
+                if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
+
+                const data = await response.json();
+                
+                if (data.error) {
+                    throw new Error(data.message || 'API вернул ошибку');
+                }
+
+                // Отображаем Raw Data для подтверждения работы
+                debugData.innerText = JSON.stringify(data, null, 2);
+
+                renderResults(data);
+
+            } catch (e) {
+                console.error(e);
+                showError(e.message || 'Ошибка соединения с FastSaver API');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function renderResults(data) {
+            // 1. Метаданные
+            videoTitle.innerText = data.title || data.desc || "Медиа файл без названия";
+            videoAuthor.innerHTML = `<i class="fas fa-user mr-1"></i> ${data.author || "Unknown"}`;
+            platformName.innerText = identifyPlatform(urlInput.value);
+
+            // 2. Превью
+            const thumb = data.thumb || data.cover || data.thumbnail;
+            mediaPreview.innerHTML = '';
+            if (thumb) {
+                mediaPreview.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`;
+            } else {
+                mediaPreview.innerHTML = `<div class="text-slate-600">No Preview</div>`;
+            }
+
+            // 3. Audio Intelligence (Shazam Feature)
+            // API обычно возвращает музыку в объекте 'music' или 'sound'
+            const music = data.music || data.sound;
+            if (music && (music.url || music.play_url)) {
+                musicCard.classList.remove('hidden');
+                musicTitle.innerText = music.title || music.name || "Unknown Track";
+                musicAuthor.innerText = music.author || music.artist || "Unknown Artist";
+                musicCover.src = music.cover || music.thumb || thumb || ""; // Fallback to video thumb
+                musicDownload.href = music.url || music.play_url;
+            } else {
+                musicCard.classList.add('hidden');
+            }
+
+            // 4. Список ссылок (Parsing Medias)
+            downloadList.innerHTML = '';
+            
+            // Собираем все медиа в один массив
+            let medias = [];
+            if (data.medias) medias = medias.concat(data.medias);
+            if (data.videos) medias = medias.concat(data.videos);
+            if (data.images) medias = medias.concat(data.images);
+            
+            // Если массив пуст, но есть корневые ссылки
+            if (medias.length === 0) {
+                const rootUrl = findUrl(data);
+                if(rootUrl) medias.push({ url: rootUrl, type: 'video', quality: 'HD' });
+            }
+
+            // Рендеринг кнопок
+            medias.forEach(media => {
+                if(!media.url) return;
+                
+                const isNoWatermark = !media.watermark || media.no_watermark === true;
+                const typeIcon = media.type === 'audio' ? 'fa-music' : (media.type === 'image' ? 'fa-image' : 'fa-video');
+                const qualityLabel = media.quality || media.resolution || (media.type === 'audio' ? 'AUDIO' : 'HD');
+                const sizeLabel = media.size ? formatBytes(media.size) : '';
+                const ext = media.extension || 'mp4';
+
+                const btn = document.createElement('a');
+                btn.href = media.url;
+                btn.target = "_blank";
+                btn.className = "flex items-center justify-between p-4 bg-white/5 border border-white/5 rounded-xl hover:bg-white/10 hover:border-indigo-500/50 transition group";
+                
+                btn.innerHTML = `
+                    <div class="flex items-center gap-4">
+                        <div class="w-10 h-10 rounded-full bg-black flex items-center justify-center text-indigo-400 group-hover:text-white transition">
+                            <i class="fas ${typeIcon}"></i>
+                        </div>
+                        <div class="flex flex-col">
+                            <div class="text-sm font-bold text-white flex items-center gap-2">
+                                ${qualityLabel}
+                                ${isNoWatermark ? '<span class="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 rounded border border-emerald-500/30">NO WM</span>' : ''}
+                            </div>
+                            <div class="text-[10px] font-mono text-slate-500">${ext.toUpperCase()} ${sizeLabel}</div>
+                        </div>
+                    </div>
+                    <i class="fas fa-download text-slate-500 group-hover:text-white transition"></i>
+                `;
+                downloadList.appendChild(btn);
+            });
+
+            resultContainer.classList.remove('hidden');
+            resultContainer.classList.add('grid');
+        }
+
+        // --- HELPERS ---
+
+        function findUrl(obj) {
+            if(obj.url) return obj.url;
+            if(obj.download_url) return obj.download_url;
+            if(obj.video_url) return obj.video_url;
+            return null;
+        }
+
+        function identifyPlatform(url) {
+            if (url.includes('tiktok')) return 'TikTok';
+            if (url.includes('instagram')) return 'Instagram';
+            if (url.includes('youtu')) return 'YouTube';
+            if (url.includes('facebook')) return 'Facebook';
+            return 'Web Link';
+        }
+
+        function formatBytes(bytes, decimals = 2) {
+            if (!+bytes) return '0 B';
+            const k = 1024;
+            const dm = decimals < 0 ? 0 : decimals;
+            const sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return `${parseFloat((bytes / Math.pow(k, i)).toFixed(dm))} ${sizes[i]}`;
+        }
+
+        function setLoading(state) {
+            if (state) {
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
+                loader.classList.remove('hidden');
+                loader.classList.add('flex');
+            } else {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = '<span>RUN</span><i class="fas fa-terminal text-xs"></i>';
+                loader.classList.add('hidden');
+                loader.classList.remove('flex');
+            }
+        }
+
+        function resetUI() {
+            resultContainer.classList.add('hidden');
+            resultContainer.classList.remove('grid');
+            errorBox.classList.add('hidden');
+            musicCard.classList.add('hidden');
+        }
+
+        function showError(msg) {
+            document.getElementById('errorMsg').innerText = msg;
+            errorBox.classList.remove('hidden');
+        }
+
+        function toggleDebug() {
+            debugData.classList.toggle('hidden');
+        }
+    </script>
+</body>
+</html>
+
+
