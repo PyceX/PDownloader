@@ -8,7 +8,7 @@
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
-        /* Базовые настройки для предотвращения скролла */
+        /* Базовые настройки */
         html, body {
             height: 100%;
             overflow-x: hidden;
@@ -25,7 +25,7 @@
             flex-direction: column;
         }
 
-        /* Оптимизированный фон */
+        /* Фон */
         .aurora-bg {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -37,7 +37,7 @@
             pointer-events: none;
         }
 
-        /* UI Элементы */
+        /* UI */
         .glass-panel {
             background: rgba(20, 20, 20, 0.7);
             backdrop-filter: blur(20px);
@@ -106,7 +106,7 @@
                         onkeydown="if(event.key === 'Enter') fetchMedia()">
                     
                     <button id="clearBtn" onclick="clearInput()" class="hidden text-slate-500 hover:text-white px-2 transition mr-1">
-                        <i class="fas fa-times-circle"></i>
+                        <i class="fas fa-times"></i>
                     </button>
                     
                     <button onclick="fetchMedia()" id="searchBtn"
@@ -137,14 +137,14 @@
 
             <!-- Download Buttons -->
             <div class="space-y-3 w-full">
-                <button id="mainDownloadBtn" onclick="forceDownload(this.dataset.url, this.dataset.title, 'video')"
+                <button id="mainDownloadBtn" onclick="smartDownload(this.dataset.url, this.dataset.title, 'video')"
                    class="w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-3 transition-transform active:scale-95">
                     <i class="fas fa-video"></i>
                     <span class="btn-text">Скачать Видео</span>
                     <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
                 </button>
 
-                <button id="audioDownloadBtn" onclick="forceDownload(this.dataset.url, this.dataset.title, 'audio')"
+                <button id="audioDownloadBtn" onclick="smartDownload(this.dataset.url, this.dataset.title, 'audio')"
                    class="hidden w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-xl flex items-center justify-center gap-3 transition-colors active:scale-95">
                     <i class="fas fa-music text-slate-400"></i>
                     <span class="btn-text">Скачать Аудио</span>
@@ -170,7 +170,12 @@
         // --- CONFIG ---
         const TOKENS = ['sX2ZsiuwR3igQb2OKJwMqWxT', 'vsXKbUDZ4BlGr5FC2GXnKCze'];
         const API_ENDPOINT = 'https://fastsaverapi.com/get-info';
-        const PROXY = 'https://corsproxy.io/?';
+        
+        // Два прокси для надежности
+        const PROXIES = [
+            'https://corsproxy.io/?',
+            'https://api.allorigins.win/raw?url='
+        ];
 
         // State
         let currentFileTitle = "PDownloader_File";
@@ -210,7 +215,6 @@
             el.loader.classList.toggle('hidden', !state);
             el.loader.classList.toggle('flex', state);
             
-            // Сдвиг лейаута
             if(state) {
                 el.main.classList.remove('justify-center');
                 el.main.classList.add('justify-start', 'pt-12');
@@ -251,7 +255,6 @@
                 const data = await fetchWithRotation(url);
                 el.status.classList.remove('error');
                 
-                // Sanitize Title
                 currentFileTitle = (data.title || data.desc || "video")
                     .replace(/[^a-z0-9а-яё \-_]/gi, '')
                     .substring(0, 50).trim() || "PDownloader_file";
@@ -267,17 +270,22 @@
             }
         }
 
+        // Ротация токенов и прокси для API запроса
         async function fetchWithRotation(url) {
             for (const token of TOKENS) {
-                try {
-                    const target = `${API_ENDPOINT}?token=${token}&url=${encodeURIComponent(url)}`;
-                    const res = await fetch(PROXY + encodeURIComponent(target));
-                    if (!res.ok) throw new Error("Network error");
-                    const data = await res.json();
-                    if (data.error) throw new Error(data.message);
-                    return data;
-                } catch (e) {
-                    continue;
+                const target = `${API_ENDPOINT}?token=${token}&url=${encodeURIComponent(url)}`;
+                
+                // Пробуем разные прокси для самого запроса API
+                for (const proxy of PROXIES) {
+                    try {
+                        const res = await fetch(proxy + encodeURIComponent(target));
+                        if (!res.ok) continue;
+                        const data = await res.json();
+                        if (data.error) throw new Error(data.message);
+                        return data;
+                    } catch (e) {
+                        continue;
+                    }
                 }
             }
             throw new Error("All tokens failed");
@@ -353,8 +361,8 @@
             el.icon.className = `${iconClass} text-white text-lg`;
         }
 
-        // --- Force Download Logic (Octet-Stream + Random Name) ---
-        async function forceDownload(url, title, type) {
+        // --- Smart Download Logic ---
+        async function smartDownload(url, title, type) {
             if (!url) return;
             const btn = type === 'audio' ? el.dlAudio : el.dlMain;
             const ui = {
@@ -368,21 +376,32 @@
             btn.classList.add('opacity-80');
             ui.icon.classList.add('hidden');
             ui.loader.classList.remove('hidden');
-            ui.text.innerText = "Сохранение...";
+            ui.text.innerText = "Загрузка...";
 
             try {
-                const proxyUrl = PROXY + encodeURIComponent(url);
+                // Попытка скачать через прокси для переименования
+                // Используем только первый прокси, он поддерживает Blob
+                const proxyUrl = PROXIES[0] + encodeURIComponent(url);
+                
                 const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Network error");
+                
+                // ВАЖНО: Проверяем тип контента. Если вернулся HTML/Text (ошибка прокси), выбрасываем исключение
+                const contentType = response.headers.get("content-type");
+                if (!response.ok || (contentType && contentType.includes('text/html'))) {
+                    throw new Error("Proxy failed or returned error page");
+                }
                 
                 const blob = await response.blob();
                 
+                // Еще одна проверка: если blob слишком маленький (текст ошибки), считаем неудачей
+                if (blob.size < 1000) { // < 1KB
+                     throw new Error("File too small, likely error text");
+                }
+
                 // Подменяем тип для предотвращения авто-открытия
                 const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
                 
                 const ext = getExtension(blob.type, url, type);
-                
-                // Генерируем 5 случайных символов
                 const randomSuffix = Math.random().toString(36).substring(2, 7);
                 const fileName = `${title}_${randomSuffix}${ext}`;
 
@@ -390,7 +409,7 @@
                 const a = document.createElement('a');
                 a.style.display = 'none';
                 a.href = blobUrl;
-                a.download = fileName;
+                a.download = fileName; 
                 document.body.appendChild(a);
                 a.click();
                 
@@ -400,7 +419,9 @@
                 }, 100);
 
             } catch (e) {
-                console.error("Download failed:", e);
+                console.warn("Proxy download failed, using direct link fallback:", e);
+                // Fallback: Открываем прямую ссылку в новой вкладке
+                // Это надежно работает, даже если прокси заблокировал Instagram
                 window.open(url, '_blank');
             } finally {
                 btn.disabled = false;
