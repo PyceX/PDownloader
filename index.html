@@ -32,7 +32,7 @@
             opacity: 0.8;
         }
 
-        /* Современное стекло */
+        /* Стекло */
         .glass-panel {
             background: rgba(20, 20, 20, 0.6);
             backdrop-filter: blur(24px);
@@ -98,7 +98,6 @@
             <span class="font-bold text-xl tracking-tight text-white">PDownloader</span>
         </div>
         
-        <!-- API Status Indicator -->
         <div class="px-3 py-1.5 rounded-full bg-white/5 border border-white/10 backdrop-blur-md flex items-center justify-center" title="API Status">
             <div id="apiStatus" class="status-dot"></div>
         </div>
@@ -125,7 +124,7 @@
                         onkeydown="if(event.key === 'Enter') fetchMedia()">
                     
                     <!-- Кнопка очистки -->
-                    <button id="clearBtn" onclick="clearInput()" class="hidden text-slate-500 hover:text-white px-2 transition">
+                    <button id="clearBtn" onclick="clearInput()" class="hidden text-slate-500 hover:text-white px-2 transition mr-1">
                         <i class="fas fa-times-circle"></i>
                     </button>
                     
@@ -149,38 +148,13 @@
             <!-- 1. Video Player -->
             <div class="w-full aspect-[9/16] md:aspect-square relative rounded-2xl overflow-hidden shadow-2xl ring-1 ring-white/10">
                 <div id="playerWrapper" class="w-full h-full bg-black flex items-center justify-center"></div>
+                
                 <div class="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1.5 rounded-lg border border-white/10 flex items-center gap-2 shadow-lg">
                     <i id="platformIcon" class="fab fa-instagram text-white text-lg"></i>
                 </div>
             </div>
 
-            <!-- 2. SHAZAM CARD (Динамически подгружается) -->
-            <div id="shazamCard" class="hidden w-full glass-panel p-4 rounded-2xl border-l-4 border-l-emerald-500 relative overflow-hidden group">
-                <div class="absolute -right-10 -top-10 w-32 h-32 bg-emerald-500/20 rounded-full blur-[40px]"></div>
-                
-                <div class="flex items-center gap-4 relative z-10">
-                    <div class="relative w-16 h-16 flex-shrink-0">
-                        <img id="musicThumb" src="" class="w-full h-full rounded-xl object-cover shadow-lg border border-white/10 bg-slate-800">
-                        <div class="absolute -bottom-1 -right-1 bg-black rounded-full p-1">
-                            <i class="fab fa-spotify text-emerald-500 text-sm"></i>
-                        </div>
-                    </div>
-                    
-                    <div class="flex-grow min-w-0">
-                        <div class="text-[10px] font-bold text-emerald-400 uppercase tracking-widest mb-0.5 flex items-center gap-1">
-                            <i class="fas fa-music"></i> Shazam Detected
-                        </div>
-                        <h3 id="musicTitle" class="text-base font-bold text-white truncate leading-tight">Searching...</h3>
-                        <p id="musicArtist" class="text-xs text-slate-400 truncate">Please wait</p>
-                    </div>
-
-                    <a id="musicDownloadBtn" href="#" target="_blank" class="w-10 h-10 rounded-full bg-white text-black flex items-center justify-center hover:bg-emerald-400 transition shadow-lg flex-shrink-0">
-                        <i class="fas fa-download"></i>
-                    </a>
-                </div>
-            </div>
-
-            <!-- 3. Action Buttons -->
+            <!-- 2. Action Buttons -->
             <div class="space-y-3 w-full">
                 <!-- Видео -->
                 <a id="mainDownloadBtn" href="#" target="_blank" 
@@ -189,11 +163,11 @@
                     <span>Скачать Видео</span>
                 </a>
 
-                <!-- Аудио -->
+                <!-- Аудио (Показывается только если найдено) -->
                 <a id="audioDownloadBtn" href="#" target="_blank" 
                    class="hidden w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-center transition flex items-center justify-center gap-3">
-                    <i class="fas fa-headphones text-slate-400"></i>
-                    <span>Скачать Аудио</span>
+                    <i class="fas fa-music text-slate-400"></i>
+                    <span>Скачать Аудио (MP3)</span>
                 </a>
             </div>
 
@@ -218,215 +192,40 @@
         // --- КОНФИГУРАЦИЯ ---
         const API_TOKEN = 'sX2ZsiuwR3igQb2OKJwMqWxT';
         const API_BASE_INFO = 'https://fastsaverapi.com/get-info';
-        const API_BASE_MUSIC = 'https://fastsaverapi.com/recognize-music';
         const PROXY = 'https://corsproxy.io/?';
 
-        // Элементы
+        // Элементы DOM
         const urlInput = document.getElementById('urlInput');
         const clearBtn = document.getElementById('clearBtn');
         const searchBtn = document.getElementById('searchBtn');
         const loader = document.getElementById('loader');
-        const loaderText = document.getElementById('loaderText');
         const resultContainer = document.getElementById('resultContainer');
         const playerWrapper = document.getElementById('playerWrapper');
         const errorCard = document.getElementById('errorCard');
         const apiStatus = document.getElementById('apiStatus');
         const platformIcon = document.getElementById('platformIcon');
         
-        // Кнопки
+        // Кнопки скачивания
         const mainDownloadBtn = document.getElementById('mainDownloadBtn');
         const audioDownloadBtn = document.getElementById('audioDownloadBtn');
-        
-        // Shazam
-        const shazamCard = document.getElementById('shazamCard');
-        const musicThumb = document.getElementById('musicThumb');
-        const musicTitle = document.getElementById('musicTitle');
-        const musicArtist = document.getElementById('musicArtist');
-        const musicDownloadBtn = document.getElementById('musicDownloadBtn');
 
-        // Управление полем ввода
+        // --- УПРАВЛЕНИЕ UI ---
+
         function toggleClearBtn() {
-            if (urlInput.value.length > 0) {
-                clearBtn.classList.remove('hidden');
-            } else {
-                clearBtn.classList.add('hidden');
-            }
+            clearBtn.classList.toggle('hidden', urlInput.value.length === 0);
         }
 
         function clearInput() {
             urlInput.value = '';
             toggleClearBtn();
             resetUI();
+            urlInput.focus();
         }
 
-        async function fetchMedia() {
-            const url = urlInput.value.trim();
-            if(!url) return;
-
-            resetUI();
-            setLoading(true, "Анализ видео...");
-
-            try {
-                // ШАГ 1: Получаем инфо о видео
-                const infoUrl = `${API_BASE_INFO}?url=${encodeURIComponent(url)}&token=${API_TOKEN}`;
-                const response = await fetch(PROXY + encodeURIComponent(infoUrl));
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.message || "Ошибка API");
-
-                // Рендерим видео и основную кнопку
-                const videoUrl = renderVideoData(data);
-                
-                // Рендерим кнопку Аудио если есть в ответе
-                renderAudioButton(data);
-
-                apiStatus.classList.remove('error');
-
-                // ШАГ 2: Запускаем Shazam (если есть ссылка на видеофайл)
-                if (videoUrl) {
-                    // Не блокируем интерфейс, делаем в фоне
-                    fetchShazamData(videoUrl);
-                }
-
-                resultContainer.classList.remove('hidden');
-                setTimeout(() => resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
-
-            } catch (e) {
-                console.error(e);
-                showError("Не удалось получить данные. Проверьте ссылку.");
-                apiStatus.classList.add('error');
-            } finally {
-                setLoading(false);
-            }
-        }
-
-        // --- ЛОГИКА SHAZAM ---
-        async function fetchShazamData(fileUrl) {
-            try {
-                // Показываем карточку в состоянии загрузки
-                shazamCard.classList.remove('hidden');
-                musicTitle.innerText = "Распознавание...";
-                musicArtist.innerText = "Подождите...";
-                musicThumb.src = "https://placehold.co/100x100/10b981/ffffff?text=Scanning";
-
-                const shazamUrl = `${API_BASE_MUSIC}?file_url=${encodeURIComponent(fileUrl)}&token=${API_TOKEN}`;
-                const response = await fetch(PROXY + encodeURIComponent(shazamUrl));
-                const data = await response.json();
-
-                if (data && (data.title || data.track)) {
-                    musicTitle.innerText = data.title || data.track || "Найден трек";
-                    musicArtist.innerText = data.artist || data.author || "Неизвестен";
-                    musicThumb.src = data.cover || data.thumb || data.image || "";
-                    
-                    const musicLink = data.url || data.link || data.download_url;
-                    if (musicLink) {
-                        musicDownloadBtn.href = musicLink;
-                        musicDownloadBtn.classList.remove('pointer-events-none', 'opacity-50');
-                    } else {
-                        musicDownloadBtn.classList.add('hidden');
-                    }
-                } else {
-                    // Если музыка не найдена
-                    shazamCard.classList.add('hidden');
-                }
-
-            } catch (e) {
-                console.warn("Shazam error:", e);
-                shazamCard.classList.add('hidden');
-            }
-        }
-
-        // --- РЕНДЕРИНГ ---
-
-        function renderVideoData(data) {
-            updatePlatformIcon(urlInput.value);
-            const thumb = data.thumb || data.cover || data.thumbnail;
-            const videoUrl = findBestVideo(data);
-
-            playerWrapper.innerHTML = '';
-
-            if (videoUrl) {
-                const video = document.createElement('video');
-                video.src = videoUrl;
-                video.controls = true;
-                video.poster = thumb || '';
-                video.className = "w-full h-full object-contain";
-                video.setAttribute('playsinline', '');
-                
-                video.onerror = () => {
-                    playerWrapper.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`;
-                };
-                playerWrapper.appendChild(video);
-                
-                mainDownloadBtn.href = videoUrl;
-                return videoUrl; // Возвращаем для Shazam
-            } else {
-                // Если это фото
-                playerWrapper.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`;
-                const imgUrl = findImageUrl(data);
-                if(imgUrl) {
-                    mainDownloadBtn.href = imgUrl;
-                    mainDownloadBtn.innerHTML = '<i class="fas fa-image"></i> <span>Скачать Фото</span>';
-                }
-                return null;
-            }
-        }
-
-        function renderAudioButton(data) {
-            const audioUrl = findAudioUrl(data);
-            if (audioUrl) {
-                audioDownloadBtn.href = audioUrl;
-                audioDownloadBtn.classList.remove('hidden');
-                audioDownloadBtn.classList.add('block');
-            } else {
-                audioDownloadBtn.classList.add('hidden');
-                audioDownloadBtn.classList.remove('block');
-            }
-        }
-
-        // --- ПОИСК URL ---
-        function findBestVideo(data) {
-            if (data.medias) {
-                const noWm = data.medias.find(m => m.type === 'video' && (m.no_watermark === true || !m.watermark));
-                if (noWm) return noWm.url;
-            }
-            if (data.url) return data.url;
-            if (data.download_url) return data.download_url;
-            if (data.video_url) return data.video_url;
-            return null;
-        }
-
-        function findAudioUrl(data) {
-            if (data.medias) {
-                const audio = data.medias.find(m => m.type === 'audio' || m.extension === 'mp3');
-                if (audio) return audio.url;
-            }
-            if (data.audio_url) return data.audio_url;
-            if (data.audio) return data.audio;
-            return null;
-        }
-
-        function findImageUrl(data) {
-            if (data.medias) {
-                const img = data.medias.find(m => m.type === 'image');
-                if(img) return img.url;
-            }
-            return data.cover || data.thumb;
-        }
-
-        function updatePlatformIcon(url) {
-            if (url.includes('tiktok')) platformIcon.className = 'fab fa-tiktok text-white';
-            else if (url.includes('instagram')) platformIcon.className = 'fab fa-instagram text-pink-500';
-            else if (url.includes('youtu')) platformIcon.className = 'fab fa-youtube text-red-500';
-            else platformIcon.className = 'fas fa-link text-blue-400';
-        }
-
-        // --- UI UTILS ---
-        function setLoading(state, text = "Загрузка...") {
+        function setLoading(state) {
             if (state) {
                 searchBtn.disabled = true;
                 searchBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i>';
-                loaderText.innerText = text;
                 loader.classList.remove('hidden');
                 loader.classList.add('flex');
             } else {
@@ -440,8 +239,9 @@
         function resetUI() {
             resultContainer.classList.add('hidden');
             errorCard.classList.add('hidden');
-            shazamCard.classList.add('hidden');
             playerWrapper.innerHTML = '';
+            audioDownloadBtn.classList.add('hidden');
+            mainDownloadBtn.classList.remove('hidden');
         }
 
         function showError(msg) {
@@ -449,6 +249,148 @@
             errorCard.classList.remove('hidden');
             setTimeout(() => errorCard.classList.add('hidden'), 4000);
         }
+
+        // --- ОСНОВНАЯ ЛОГИКА ---
+
+        async function fetchMedia() {
+            const url = urlInput.value.trim();
+            if(!url) return;
+
+            resetUI();
+            setLoading(true);
+
+            try {
+                // Запрос к API
+                const infoUrl = `${API_BASE_INFO}?url=${encodeURIComponent(url)}&token=${API_TOKEN}`;
+                const response = await fetch(PROXY + encodeURIComponent(infoUrl));
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.message || "Ошибка API");
+
+                // Парсинг и отображение
+                renderResults(data);
+                
+                apiStatus.classList.remove('error');
+
+            } catch (e) {
+                console.error(e);
+                showError("Не удалось скачать. Проверьте ссылку.");
+                apiStatus.classList.add('error');
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        function renderResults(data) {
+            updatePlatformIcon(urlInput.value);
+            
+            // 1. Обработка Видео/Фото (Превью)
+            const videoUrl = findBestVideo(data);
+            const thumb = data.thumb || data.cover || data.thumbnail;
+            
+            playerWrapper.innerHTML = '';
+
+            if (videoUrl) {
+                // Это видео
+                const video = document.createElement('video');
+                video.src = videoUrl;
+                video.controls = true;
+                video.poster = thumb || '';
+                video.className = "w-full h-full object-contain";
+                video.setAttribute('playsinline', '');
+                
+                video.onerror = () => {
+                    playerWrapper.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`;
+                };
+                playerWrapper.appendChild(video);
+                
+                mainDownloadBtn.href = videoUrl;
+                mainDownloadBtn.innerHTML = '<i class="fas fa-video"></i> <span>Скачать Видео</span>';
+            } else {
+                // Это может быть фото
+                const imgUrl = findImageUrl(data);
+                playerWrapper.innerHTML = `<img src="${thumb || imgUrl}" class="w-full h-full object-cover">`;
+                
+                if (imgUrl) {
+                    mainDownloadBtn.href = imgUrl;
+                    mainDownloadBtn.innerHTML = '<i class="fas fa-image"></i> <span>Скачать Фото</span>';
+                } else {
+                    mainDownloadBtn.classList.add('hidden');
+                }
+            }
+
+            // 2. Обработка Аудио (MP3)
+            const audioUrl = findAudioUrl(data);
+            if (audioUrl) {
+                audioDownloadBtn.href = audioUrl;
+                audioDownloadBtn.classList.remove('hidden');
+                audioDownloadBtn.classList.add('block'); // ensure block display
+            } else {
+                audioDownloadBtn.classList.add('hidden');
+                audioDownloadBtn.classList.remove('block');
+            }
+
+            // Показываем результат
+            resultContainer.classList.remove('hidden');
+            setTimeout(() => resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+        }
+
+        // --- ФУНКЦИИ ПАРСИНГА ОТВЕТА API ---
+
+        function findBestVideo(data) {
+            // Ищем видео без водяного знака в массиве medias
+            if (data.medias && Array.isArray(data.medias)) {
+                // 1. Приоритет: Видео без водяного знака
+                const noWm = data.medias.find(m => m.type === 'video' && (m.no_watermark === true || !m.watermark));
+                if (noWm) return noWm.url;
+                
+                // 2. Любое видео
+                const anyVideo = data.medias.find(m => m.type === 'video');
+                if (anyVideo) return anyVideo.url;
+            }
+            
+            // Корневые свойства
+            if (data.url && !data.url.endsWith('.mp3')) return data.url;
+            if (data.download_url) return data.download_url;
+            if (data.video_url) return data.video_url;
+            
+            return null;
+        }
+
+        function findAudioUrl(data) {
+            // 1. Ищем в массиве medias объект с типом audio или расширением mp3
+            if (data.medias && Array.isArray(data.medias)) {
+                const audioObj = data.medias.find(m => m.type === 'audio' || m.extension === 'mp3');
+                if (audioObj) return audioObj.url;
+            }
+
+            // 2. Ищем специфические корневые поля, которые FastSaver часто возвращает
+            if (data.audio_url) return data.audio_url;
+            if (data.music) return data.music;
+            if (data.sound) return data.sound;
+            
+            return null;
+        }
+
+        function findImageUrl(data) {
+            if (data.medias && Array.isArray(data.medias)) {
+                const img = data.medias.find(m => m.type === 'image');
+                if (img) return img.url;
+            }
+            return data.cover || data.thumb || data.image;
+        }
+
+        function updatePlatformIcon(url) {
+            if (url.includes('tiktok')) platformIcon.className = 'fab fa-tiktok text-white';
+            else if (url.includes('instagram')) platformIcon.className = 'fab fa-instagram text-pink-500';
+            else if (url.includes('youtu')) platformIcon.className = 'fab fa-youtube text-red-500';
+            else if (url.includes('facebook')) platformIcon.className = 'fab fa-facebook text-blue-600';
+            else if (url.includes('twitter') || url.includes('x.com')) platformIcon.className = 'fab fa-twitter text-sky-500';
+            else platformIcon.className = 'fas fa-link text-blue-400';
+        }
+
     </script>
 </body>
 </html>
+
+
