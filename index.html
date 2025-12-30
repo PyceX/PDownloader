@@ -25,7 +25,7 @@
             flex-direction: column;
         }
 
-        /* Фон */
+        /* Фон Aurora */
         .aurora-bg {
             position: fixed;
             top: 0; left: 0; width: 100vw; height: 100vh;
@@ -106,7 +106,7 @@
                         onkeydown="if(event.key === 'Enter') fetchMedia()">
                     
                     <button id="clearBtn" onclick="clearInput()" class="hidden text-slate-500 hover:text-white px-2 transition mr-1">
-                        <i class="fas fa-times"></i>
+                        <i class="fas fa-times-circle"></i>
                     </button>
                     
                     <button onclick="fetchMedia()" id="searchBtn"
@@ -137,19 +137,18 @@
 
             <!-- Download Buttons -->
             <div class="space-y-3 w-full">
-                <button id="mainDownloadBtn" onclick="smartDownload(this.dataset.url, this.dataset.title, 'video')"
+                <!-- Прямое скачивание без JS манипуляций -->
+                <a id="mainDownloadBtn" href="#" target="_blank"
                    class="w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:brightness-110 text-white font-bold rounded-xl shadow-lg shadow-indigo-500/20 flex items-center justify-center gap-3 transition-transform active:scale-95">
                     <i class="fas fa-video"></i>
                     <span class="btn-text">Скачать Видео</span>
-                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
-                </button>
+                </a>
 
-                <button id="audioDownloadBtn" onclick="smartDownload(this.dataset.url, this.dataset.title, 'audio')"
+                <a id="audioDownloadBtn" href="#" target="_blank"
                    class="hidden w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-xl flex items-center justify-center gap-3 transition-colors active:scale-95">
                     <i class="fas fa-music text-slate-400"></i>
                     <span class="btn-text">Скачать Аудио</span>
-                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
-                </button>
+                </a>
             </div>
         </div>
 
@@ -170,15 +169,8 @@
         // --- CONFIG ---
         const TOKENS = ['sX2ZsiuwR3igQb2OKJwMqWxT', 'vsXKbUDZ4BlGr5FC2GXnKCze'];
         const API_ENDPOINT = 'https://fastsaverapi.com/get-info';
-        
-        // Два прокси для надежности
-        const PROXIES = [
-            'https://corsproxy.io/?',
-            'https://api.allorigins.win/raw?url='
-        ];
-
-        // State
-        let currentFileTitle = "PDownloader_File";
+        // Прокси ТОЛЬКО для получения JSON информации, НЕ для скачивания файла
+        const PROXY = 'https://corsproxy.io/?';
 
         // Elements
         const el = {
@@ -255,37 +247,29 @@
                 const data = await fetchWithRotation(url);
                 el.status.classList.remove('error');
                 
-                currentFileTitle = (data.title || data.desc || "video")
-                    .replace(/[^a-z0-9а-яё \-_]/gi, '')
-                    .substring(0, 50).trim() || "PDownloader_file";
-                
                 renderResult(data);
 
             } catch (e) {
                 console.error(e);
-                showError("Не удалось скачать. Проверьте ссылку.");
+                showError("Не удалось получить данные. Проверьте ссылку.");
                 el.status.classList.add('error');
             } finally {
                 setLoading(false);
             }
         }
 
-        // Ротация токенов и прокси для API запроса
         async function fetchWithRotation(url) {
             for (const token of TOKENS) {
-                const target = `${API_ENDPOINT}?token=${token}&url=${encodeURIComponent(url)}`;
-                
-                // Пробуем разные прокси для самого запроса API
-                for (const proxy of PROXIES) {
-                    try {
-                        const res = await fetch(proxy + encodeURIComponent(target));
-                        if (!res.ok) continue;
-                        const data = await res.json();
-                        if (data.error) throw new Error(data.message);
-                        return data;
-                    } catch (e) {
-                        continue;
-                    }
+                try {
+                    const target = `${API_ENDPOINT}?token=${token}&url=${encodeURIComponent(url)}`;
+                    // Используем прокси ТОЛЬКО для получения метаданных (JSON)
+                    const res = await fetch(PROXY + encodeURIComponent(target));
+                    if (!res.ok) throw new Error("Network error");
+                    const data = await res.json();
+                    if (data.error) throw new Error(data.message);
+                    return data;
+                } catch (e) {
+                    continue;
                 }
             }
             throw new Error("All tokens failed");
@@ -311,13 +295,18 @@
                 video.onerror = () => { el.player.innerHTML = `<img src="${thumb}" class="w-full h-full object-cover">`; };
                 el.player.appendChild(video);
 
-                setupBtn(el.dlMain, videoUrl, 'video', 'Скачать Видео', 'fa-video');
+                // ПРЯМОЕ СКАЧИВАНИЕ: Ставим прямую ссылку в href
+                // Это решает проблему "provide proxy" и не требует JS манипуляций
+                el.dlMain.href = videoUrl;
+                el.dlMain.dataset.download = "video.mp4"; // Подсказка браузеру
+                el.dlMain.querySelector('.btn-text').innerText = 'Скачать Видео';
             } else {
                 const imgUrl = findMediaUrl(data, 'image') || thumb;
                 el.player.innerHTML = `<img src="${imgUrl}" class="w-full h-full object-cover">`;
                 
                 if (imgUrl && !imgUrl.endsWith('.mp3')) {
-                    setupBtn(el.dlMain, imgUrl, 'image', 'Скачать Фото', 'fa-image');
+                    el.dlMain.href = imgUrl;
+                    el.dlMain.querySelector('.btn-text').innerText = 'Скачать Фото';
                 } else {
                     el.dlMain.classList.add('hidden');
                 }
@@ -326,17 +315,14 @@
             if (audioUrl) {
                 el.dlAudio.classList.remove('hidden');
                 el.dlAudio.classList.add('flex');
-                setupBtn(el.dlAudio, audioUrl, 'audio', 'Скачать Аудио', 'fa-music');
+                el.dlAudio.href = audioUrl;
+                el.dlAudio.dataset.download = "audio.mp3";
+            } else {
+                el.dlAudio.classList.add('hidden');
+                el.dlAudio.classList.remove('flex');
             }
 
             el.result.classList.remove('hidden');
-        }
-
-        function setupBtn(btn, url, type, label, iconClass) {
-            btn.dataset.url = url;
-            btn.dataset.title = currentFileTitle;
-            btn.querySelector('.btn-text').innerText = label;
-            btn.querySelector('i:not(.btn-loader)').className = `fas ${iconClass}`;
         }
 
         function findMediaUrl(data, type) {
@@ -359,84 +345,6 @@
             let iconClass = 'fas fa-link';
             for (const key in map) if (url.includes(key)) iconClass = map[key];
             el.icon.className = `${iconClass} text-white text-lg`;
-        }
-
-        // --- Smart Download Logic ---
-        async function smartDownload(url, title, type) {
-            if (!url) return;
-            const btn = type === 'audio' ? el.dlAudio : el.dlMain;
-            const ui = {
-                text: btn.querySelector('.btn-text'),
-                loader: btn.querySelector('.btn-loader'),
-                icon: btn.querySelector('i:not(.btn-loader)')
-            };
-            const originalText = ui.text.innerText;
-
-            btn.disabled = true;
-            btn.classList.add('opacity-80');
-            ui.icon.classList.add('hidden');
-            ui.loader.classList.remove('hidden');
-            ui.text.innerText = "Загрузка...";
-
-            try {
-                // Попытка скачать через прокси для переименования
-                // Используем только первый прокси, он поддерживает Blob
-                const proxyUrl = PROXIES[0] + encodeURIComponent(url);
-                
-                const response = await fetch(proxyUrl);
-                
-                // ВАЖНО: Проверяем тип контента. Если вернулся HTML/Text (ошибка прокси), выбрасываем исключение
-                const contentType = response.headers.get("content-type");
-                if (!response.ok || (contentType && contentType.includes('text/html'))) {
-                    throw new Error("Proxy failed or returned error page");
-                }
-                
-                const blob = await response.blob();
-                
-                // Еще одна проверка: если blob слишком маленький (текст ошибки), считаем неудачей
-                if (blob.size < 1000) { // < 1KB
-                     throw new Error("File too small, likely error text");
-                }
-
-                // Подменяем тип для предотвращения авто-открытия
-                const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
-                
-                const ext = getExtension(blob.type, url, type);
-                const randomSuffix = Math.random().toString(36).substring(2, 7);
-                const fileName = `${title}_${randomSuffix}${ext}`;
-
-                const blobUrl = window.URL.createObjectURL(forcedBlob);
-                const a = document.createElement('a');
-                a.style.display = 'none';
-                a.href = blobUrl;
-                a.download = fileName; 
-                document.body.appendChild(a);
-                a.click();
-                
-                setTimeout(() => {
-                    document.body.removeChild(a);
-                    window.URL.revokeObjectURL(blobUrl);
-                }, 100);
-
-            } catch (e) {
-                console.warn("Proxy download failed, using direct link fallback:", e);
-                // Fallback: Открываем прямую ссылку в новой вкладке
-                // Это надежно работает, даже если прокси заблокировал Instagram
-                window.open(url, '_blank');
-            } finally {
-                btn.disabled = false;
-                btn.classList.remove('opacity-80');
-                ui.icon.classList.remove('hidden');
-                ui.loader.classList.add('hidden');
-                ui.text.innerText = originalText;
-            }
-        }
-
-        function getExtension(mime, url, type) {
-            if (mime.includes('audio') || type === 'audio') return '.mp3';
-            if (mime.includes('image')) return '.jpg';
-            if (url.includes('.webm')) return '.webm';
-            return '.mp4';
         }
     </script>
 </body>
