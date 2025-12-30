@@ -88,7 +88,6 @@
     </header>
 
     <!-- Main Content -->
-    <!-- Используем flex-grow и justify-center для вертикального центрирования при старте -->
     <main id="mainContent" class="flex-grow flex flex-col items-center justify-center px-4 w-full max-w-lg mx-auto transition-all duration-500">
         
         <!-- Search Area -->
@@ -107,7 +106,7 @@
                         onkeydown="if(event.key === 'Enter') fetchMedia()">
                     
                     <button id="clearBtn" onclick="clearInput()" class="hidden text-slate-500 hover:text-white px-2 transition mr-1">
-                        <i class="fas fa-times"></i>
+                        <i class="fas fa-times-circle"></i>
                     </button>
                     
                     <button onclick="fetchMedia()" id="searchBtn"
@@ -125,7 +124,6 @@
         </div>
 
         <!-- Result Container -->
-        <!-- Добавлен margin-top для разделения с поиском, когда есть результаты -->
         <div id="resultContainer" class="hidden w-full space-y-5 animate-enter pb-10 mt-6">
             
             <!-- Video Player -->
@@ -212,7 +210,7 @@
             el.loader.classList.toggle('hidden', !state);
             el.loader.classList.toggle('flex', state);
             
-            // Сдвиг лейаута при загрузке
+            // Сдвиг лейаута
             if(state) {
                 el.main.classList.remove('justify-center');
                 el.main.classList.add('justify-start', 'pt-12');
@@ -226,7 +224,6 @@
             el.dlAudio.classList.add('hidden');
             el.dlMain.classList.remove('hidden');
             
-            // Возврат к центру если очистили
             if(el.input.value.length === 0) {
                 el.main.classList.add('justify-center');
                 el.main.classList.remove('justify-start', 'pt-12');
@@ -244,11 +241,8 @@
             const url = el.input.value.trim();
             if(!url) return;
 
-            // Поднимаем контент вверх при начале поиска
             el.main.classList.remove('justify-center');
             el.main.classList.add('justify-start', 'pt-12');
-
-            // Скрываем старые результаты, но оставляем лейаут вверху
             el.result.classList.add('hidden');
             
             setLoading(true);
@@ -359,7 +353,7 @@
             el.icon.className = `${iconClass} text-white text-lg`;
         }
 
-        // --- Force Download Logic (Octet-Stream Trick) ---
+        // --- Force Download Logic (Octet-Stream + Random Name) ---
         async function forceDownload(url, title, type) {
             if (!url) return;
             const btn = type === 'audio' ? el.dlAudio : el.dlMain;
@@ -383,21 +377,23 @@
                 
                 const blob = await response.blob();
                 
-                // ТРЮК: Подменяем тип на binary stream, чтобы браузер не открывал плеер
+                // Подменяем тип для предотвращения авто-открытия
                 const forcedBlob = new Blob([blob], { type: 'application/octet-stream' });
                 
                 const ext = getExtension(blob.type, url, type);
-                const fileName = `${title}${ext}`;
+                
+                // Генерируем 5 случайных символов
+                const randomSuffix = Math.random().toString(36).substring(2, 7);
+                const fileName = `${title}_${randomSuffix}${ext}`;
 
                 const blobUrl = window.URL.createObjectURL(forcedBlob);
                 const a = document.createElement('a');
                 a.style.display = 'none';
                 a.href = blobUrl;
-                a.download = fileName; // Атрибут download обязателен
+                a.download = fileName;
                 document.body.appendChild(a);
                 a.click();
                 
-                // Очистка
                 setTimeout(() => {
                     document.body.removeChild(a);
                     window.URL.revokeObjectURL(blobUrl);
@@ -405,7 +401,6 @@
 
             } catch (e) {
                 console.error("Download failed:", e);
-                // Fallback (если не вышло скачать blob, открываем в новой вкладке, но это крайний случай)
                 window.open(url, '_blank');
             } finally {
                 btn.disabled = false;
