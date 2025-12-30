@@ -157,18 +157,20 @@
             <!-- 2. Action Buttons -->
             <div class="space-y-3 w-full">
                 <!-- Видео -->
-                <a id="mainDownloadBtn" href="#" target="_blank" 
+                <button id="mainDownloadBtn" onclick="forceDownload(this.dataset.url, 'video.mp4', 'video')"
                    class="block w-full py-4 px-6 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white font-bold rounded-2xl shadow-lg shadow-indigo-500/20 text-center transition transform active:scale-95 flex items-center justify-center gap-3">
                     <i class="fas fa-video"></i>
-                    <span>Скачать Видео</span>
-                </a>
+                    <span class="btn-text">Скачать Видео</span>
+                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
+                </button>
 
-                <!-- Аудио (Показывается только если найдено) -->
-                <a id="audioDownloadBtn" href="#" target="_blank" 
+                <!-- Аудио -->
+                <button id="audioDownloadBtn" onclick="forceDownload(this.dataset.url, 'audio.mp3', 'audio')"
                    class="hidden w-full py-4 px-6 bg-white/5 hover:bg-white/10 border border-white/10 text-white font-semibold rounded-2xl text-center transition flex items-center justify-center gap-3">
-                    <i class="fas fa-music text-slate-400"></i>
-                    <span>Скачать Аудио (MP3)</span>
-                </a>
+                    <i class="fas fa-headphones text-slate-400"></i>
+                    <span class="btn-text">Скачать Аудио</span>
+                    <i class="fas fa-spinner fa-spin hidden btn-loader"></i>
+                </button>
             </div>
 
         </div>
@@ -199,6 +201,7 @@
         const clearBtn = document.getElementById('clearBtn');
         const searchBtn = document.getElementById('searchBtn');
         const loader = document.getElementById('loader');
+        const loaderText = document.getElementById('loaderText');
         const resultContainer = document.getElementById('resultContainer');
         const playerWrapper = document.getElementById('playerWrapper');
         const errorCard = document.getElementById('errorCard');
@@ -304,16 +307,17 @@
                 };
                 playerWrapper.appendChild(video);
                 
-                mainDownloadBtn.href = videoUrl;
-                mainDownloadBtn.innerHTML = '<i class="fas fa-video"></i> <span>Скачать Видео</span>';
+                // Сохраняем URL в dataset для функции скачивания
+                mainDownloadBtn.dataset.url = videoUrl;
+                mainDownloadBtn.querySelector('.btn-text').innerText = 'Скачать Видео';
             } else {
                 // Это может быть фото
                 const imgUrl = findImageUrl(data);
                 playerWrapper.innerHTML = `<img src="${thumb || imgUrl}" class="w-full h-full object-cover">`;
                 
                 if (imgUrl) {
-                    mainDownloadBtn.href = imgUrl;
-                    mainDownloadBtn.innerHTML = '<i class="fas fa-image"></i> <span>Скачать Фото</span>';
+                    mainDownloadBtn.dataset.url = imgUrl;
+                    mainDownloadBtn.querySelector('.btn-text').innerText = 'Скачать Фото';
                 } else {
                     mainDownloadBtn.classList.add('hidden');
                 }
@@ -322,12 +326,12 @@
             // 2. Обработка Аудио (MP3)
             const audioUrl = findAudioUrl(data);
             if (audioUrl) {
-                audioDownloadBtn.href = audioUrl;
+                audioDownloadBtn.dataset.url = audioUrl;
                 audioDownloadBtn.classList.remove('hidden');
-                audioDownloadBtn.classList.add('block'); // ensure block display
+                audioDownloadBtn.classList.add('flex'); // ensure flex display
             } else {
                 audioDownloadBtn.classList.add('hidden');
-                audioDownloadBtn.classList.remove('block');
+                audioDownloadBtn.classList.remove('flex');
             }
 
             // Показываем результат
@@ -335,40 +339,85 @@
             setTimeout(() => resultContainer.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
         }
 
+        // --- ФУНКЦИЯ ПРИНУДИТЕЛЬНОГО СКАЧИВАНИЯ ---
+        
+        async function forceDownload(url, filename, type) {
+            if (!url) return;
+
+            // Находим кнопку и элементы внутри
+            const btnId = type === 'audio' ? 'audioDownloadBtn' : 'mainDownloadBtn';
+            const btn = document.getElementById(btnId);
+            const icon = btn.querySelector('i:not(.btn-loader)');
+            const text = btn.querySelector('.btn-text');
+            const loader = btn.querySelector('.btn-loader');
+            const originalText = text.innerText;
+
+            // UI Loading state
+            btn.disabled = true;
+            btn.classList.add('opacity-75');
+            icon.classList.add('hidden');
+            loader.classList.remove('hidden');
+            text.innerText = "Загрузка...";
+
+            try {
+                // Используем прокси для получения Blob данных
+                const proxyUrl = PROXY + encodeURIComponent(url);
+                const response = await fetch(proxyUrl);
+                
+                if (!response.ok) throw new Error("Network response was not ok");
+                
+                const blob = await response.blob();
+                const blobUrl = window.URL.createObjectURL(blob);
+                
+                // Создаем временную ссылку для скачивания
+                const a = document.createElement('a');
+                a.style.display = 'none';
+                a.href = blobUrl;
+                a.download = filename; // Браузер попытается использовать это имя
+                document.body.appendChild(a);
+                a.click();
+                
+                // Очистка
+                window.URL.revokeObjectURL(blobUrl);
+                document.body.removeChild(a);
+
+            } catch (e) {
+                console.error("Download failed:", e);
+                // Если Blob не сработал (например, файл слишком большой), открываем в новой вкладке как запасной вариант
+                window.open(url, '_blank');
+            } finally {
+                // Reset UI
+                btn.disabled = false;
+                btn.classList.remove('opacity-75');
+                icon.classList.remove('hidden');
+                loader.classList.add('hidden');
+                text.innerText = originalText;
+            }
+        }
+
         // --- ФУНКЦИИ ПАРСИНГА ОТВЕТА API ---
 
         function findBestVideo(data) {
-            // Ищем видео без водяного знака в массиве medias
             if (data.medias && Array.isArray(data.medias)) {
-                // 1. Приоритет: Видео без водяного знака
                 const noWm = data.medias.find(m => m.type === 'video' && (m.no_watermark === true || !m.watermark));
                 if (noWm) return noWm.url;
-                
-                // 2. Любое видео
                 const anyVideo = data.medias.find(m => m.type === 'video');
                 if (anyVideo) return anyVideo.url;
             }
-            
-            // Корневые свойства
             if (data.url && !data.url.endsWith('.mp3')) return data.url;
             if (data.download_url) return data.download_url;
             if (data.video_url) return data.video_url;
-            
             return null;
         }
 
         function findAudioUrl(data) {
-            // 1. Ищем в массиве medias объект с типом audio или расширением mp3
             if (data.medias && Array.isArray(data.medias)) {
                 const audioObj = data.medias.find(m => m.type === 'audio' || m.extension === 'mp3');
                 if (audioObj) return audioObj.url;
             }
-
-            // 2. Ищем специфические корневые поля, которые FastSaver часто возвращает
             if (data.audio_url) return data.audio_url;
             if (data.music) return data.music;
             if (data.sound) return data.sound;
-            
             return null;
         }
 
